@@ -4,16 +4,19 @@ import os
 import subprocess
 from flask import Flask, jsonify, render_template, request
 from proxmoxer import ProxmoxAPI
-from tasks import deploy_vm_task, parse_vm_name, extract_target_ip, FTP_SERVER_IP, COLD_STORAGE_SHARE, COLD_STORAGE_CREDS
+
+# 1. NEW: Import your secure variables from config.py
+from config import *
+from tasks import deploy_vm_task, parse_vm_name, extract_target_ip
 
 app = Flask(__name__)
 
-# Keep a lightweight Proxmox connection here just for querying dropdowns
+# 2. UPDATED: Initialize Proxmox using the variables loaded from config
 proxmox = ProxmoxAPI(
-    os.getenv("PROXMOX_IP", "10.34.7.200"),
-    user=os.getenv("TOKEN_USER", "root@pam"),
-    token_name=os.getenv("TOKEN_NAME", "vmcreation"),
-    token_value=os.getenv("TOKEN_SECRET", "8bd52103-e731-45c8-98f6-8f500c0ff055"),
+    PROXMOX_IP,
+    user=TOKEN_USER,
+    token_name=TOKEN_NAME,
+    token_value=TOKEN_SECRET,
     verify_ssl=False
 )
 
@@ -78,8 +81,6 @@ def deploy_from_form():
         "skip_freshdesk": request.form.get("skip_freshdesk")
     }
     
-    # Hand the data off to Celery instantly
-    # Pre-validate inputs to catch instant errors before queuing
     vm_name = request.form.get("vm_name", "").strip()
     template_override = request.form.get("template_vmid", "").strip()
     
@@ -91,9 +92,8 @@ def deploy_from_form():
     except Exception as e:
         return f"<h3>Deployment Failed</h3><p style='color:red;'><b>Error:</b> {str(e)}</p><br><a href='javascript:history.back()'>Go Back</a>", 400
 
-    # If validation passes, queue the task
+    # 3. FIXED: The duplicate deploy_vm_task.delay(form_data) line has been removed.
     task = deploy_vm_task.delay(request.form.to_dict())
-    task = deploy_vm_task.delay(form_data)
     
     return (
         f"<h2>Deployment Queued Successfully!</h2>"

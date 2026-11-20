@@ -1,3 +1,4 @@
+from config import *
 import ftplib
 import re
 import time
@@ -15,29 +16,7 @@ from proxmoxer import ProxmoxAPI
 app = Flask(__name__)
 
 # --- Configuration (Defaults to previous static values, but checks env vars first) ---
-PROXMOX_IP = os.getenv("PROXMOX_IP", "10.34.7.200")
-PROXMOX_NODE = os.getenv("PROXMOX_NODE", "pve")
-TOKEN_USER = os.getenv("TOKEN_USER", "root@pam")
-TOKEN_NAME = os.getenv("TOKEN_NAME", "vmcreation")
-TOKEN_SECRET = os.getenv("TOKEN_SECRET", "8bd52103-e731-45c8-98f6-8f500c0ff055")
-
-FTP_SERVER_IP = os.getenv("FTP_SERVER_IP", "10.34.0.41")
-COLD_STORAGE_SHARE = os.getenv("COLD_STORAGE_SHARE", "//10.34.0.42/VMColdstorage")
-COLD_STORAGE_CREDS = os.getenv("COLD_STORAGE_CREDS", "backup%Sun2015*")
-
-GATEWAY = os.getenv("GATEWAY", "10.34.0.2")
-NETMASK_CIDR = os.getenv("NETMASK_CIDR", "20")
-NAMESERVER = os.getenv("NAMESERVER", "1.1.1.1")
-STORAGE_POOL = os.getenv("STORAGE_POOL", "vm-storage")
-
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER", "sf-admin@sunbirddcim.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "Sun2015*")
 SENDER_EMAIL = SMTP_USER
-
-FRESHDESK_DOMAIN = os.getenv("FRESHDESK_DOMAIN", "sunbirddcim.freshdesk.com")
-FRESHDESK_API_KEY = os.getenv("FD_API_KEY", "ZgsDsyaNGTjnzCBYWy0n")
 # ---------------------
 
 proxmox = ProxmoxAPI(

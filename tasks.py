@@ -1,3 +1,4 @@
+from config import *
 import os
 import re
 import time
@@ -15,25 +16,7 @@ celery_app.conf.task_acks_late = False
 
 redis_client = redis.Redis.from_url('redis://localhost:6379/0')
 
-PROXMOX_IP = os.getenv("PROXMOX_IP", "10.34.7.200")
-PROXMOX_NODE = os.getenv("PROXMOX_NODE", "pve")
-TOKEN_USER = os.getenv("TOKEN_USER", "root@pam")
-TOKEN_NAME = os.getenv("TOKEN_NAME", "vmcreation")
-TOKEN_SECRET = os.getenv("TOKEN_SECRET", "8bd52103-e731-45c8-98f6-8f500c0ff055")
-FTP_SERVER_IP = os.getenv("FTP_SERVER_IP", "10.34.0.41")
-COLD_STORAGE_SHARE = os.getenv("COLD_STORAGE_SHARE", "//10.34.0.42/VMColdstorage")
-COLD_STORAGE_CREDS = os.getenv("COLD_STORAGE_CREDS", "backup%Sun2015*")
-GATEWAY = os.getenv("GATEWAY", "10.34.0.2")
-NETMASK_CIDR = os.getenv("NETMASK_CIDR", "20")
-NAMESERVER = os.getenv("NAMESERVER", "1.1.1.1")
-STORAGE_POOL = os.getenv("STORAGE_POOL", "vm-storage")
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER", "sf-admin@sunbirddcim.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "Sun2015*")
 SENDER_EMAIL = SMTP_USER
-FRESHDESK_DOMAIN = os.getenv("FRESHDESK_DOMAIN", "sunbird.freshdesk.com")
-FRESHDESK_API_KEY = os.getenv("FRESHDESK_API_KEY", "")
 
 proxmox = ProxmoxAPI(PROXMOX_IP, user=TOKEN_USER, token_name=TOKEN_NAME, token_value=TOKEN_SECRET, verify_ssl=False)
 
@@ -167,7 +150,7 @@ def deploy_vm_task(self, form_data):
     safe_vm_name = sanitize_proxmox_name(vm_name)
     lock_key = f"vmcreator:lock:{safe_vm_name}"
 
-    if not redis_client.set(lock_key, self.request.id or "1", nx=True, ex=7200):
+    if not redis_client.set(lock_key, self.request.id or "1", nx=True, ex=14400):
         print(f"[!] Duplicate task ignored for '{safe_vm_name}' (already running).")
         return f"Skipped duplicate deployment for {safe_vm_name} (already in progress)."
 
@@ -306,7 +289,7 @@ def deploy_vm_task(self, form_data):
             f"tail -n 40 /home/sunbird/restore_debug.log >&2; exit 1; fi; "
             f"rm -f '{guest_archive_path}'",
         ]
-        run_guest_command(new_vmid, restore_cmd)
+        run_guest_command(new_vmid, restore_cmd, timeout=10800)
 
         final_node = get_vm_node(new_vmid)
         try:
