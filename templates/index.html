@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VM Provisioning Portal</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f4f4f9; }
+        .container { max-width: 520px; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        input, select, button { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background: #0056b3; color: white; border: none; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background: #004494; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .hidden { display: none; }
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 10px 0;
+            font-size: 14px;
+            color: #333;
+        }
+        .checkbox-row input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            cursor: pointer;
+        }
+        .checkbox-row label {
+            cursor: pointer;
+            margin: 0;
+        }
+        .mismatch-box {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 15px 0 10px 0;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+    </style>
+    <script>
+        let availableTemplates = [];
+
+        // Preload available templates from Proxmox on page load
+        async function loadTemplates() {
+            try {
+                const response = await fetch('/get_templates');
+                const data = await response.json();
+                if (data.templates) {
+                    availableTemplates = data.templates;
+                }
+            } catch (err) {
+                console.error("Could not fetch templates:", err);
+            }
+        }
+
+        // Preload available resource pools from Proxmox on page load
+        async function loadPools() {
+            try {
+                const response = await fetch('/get_pools');
+                const data = await response.json();
+                const poolSelect = document.getElementById('pool_id');
+                if (data.pools && poolSelect) {
+                    data.pools.forEach(p => {
+                        let opt = document.createElement('option');
+                        opt.value = p.poolid;
+                        opt.text = p.poolid;
+                        if (p.poolid.toLowerCase() === 'technicalsupport') {
+                            opt.selected = true;
+                        }
+                        poolSelect.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error("Could not fetch pools:", err);
+            }
+        }
+
+        function toggleStorage() {
+            const storage = document.getElementById('storage_type').value;
+            document.getElementById('ftp_creds').classList.toggle('hidden', storage !== 'ftp');
+        }
+
+        function toggleFreshdesk() {
+            const skip = document.getElementById('skip_freshdesk').checked;
+            const ticketInput = document.getElementById('ticket_id');
+            ticketInput.disabled = skip;
+        }
+
+        function autoFillTicketId() {
+            const ftpUser = document.getElementById('ftp_user').value.trim();
+            const ticketInput = document.getElementById('ticket_id');
+            const prefix = ftpUser.split('_')[0];
+            if (/^\d+$/.test(prefix)) {
+                ticketInput.value = prefix;
+            }
+        }
+
+        async function fetchFiles() {
+            const vmName = document.getElementById('vm_name').value;
+            const storageType = document.getElementById('storage_type').value;
+            const ftpUser = document.getElementById('ftp_user').value;
+            const ftpPass = document.getElementById('ftp_pass').value;
+
+            if (!vmName) return alert("Please enter a VM Name first.");
+
+            document.getElementById('file_status').innerText = "Loading files...";
+
+            const response = await fetch('/get_files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vm_name: vmName, storage_type: storageType, ftp_user: ftpUser, ftp_pass: ftpPass })
+            });
+
+            const data = await response.json();
+            if (data.error) {
+                alert(data.error);
+                document.getElementById('file_status').innerText = "";
+            } else {
+                const select = document.getElementById('backup_file');
+                select.innerHTML = "";
+                data.files.forEach(file => {
+                    let opt = document.createElement('option');
+                    opt.value = file;
+                    opt.innerHTML = file;
+                    select.appendChild(opt);
+                });
+                document.getElementById('file_selection_area').classList.remove('hidden');
+                document.getElementById('file_status').innerText = "";
+
+                // Check version against first selected file
+                checkVersionMismatch();
+            }
+        }
+
+        function checkVersionMismatch() {
+            const vmName = document.getElementById("vm_name").value;
+            const backupFile = document.getElementById("backup_file").value;
+            const mismatchArea = document.getElementById("template_mismatch_area");
+            const templateSelect = document.getElementById("template_vmid");
+            const mismatchNotice = document.getElementById("mismatch_notice");
+
+            if (!vmName || !backupFile) return;
+
+            const vmMatch = vmName.match(/(?:dct|piq)[-_](\d+\.\d+\.\d+)/i);
+            const backupMatch = backupFile.match(/backup[-_](\d+\.\d+\.\d+)/i);
+
+            if (vmMatch && backupMatch && vmMatch[1] !== backupMatch[1]) {
+                const vmVer = vmMatch[1];
+                const backupVer = backupMatch[1];
+
+                mismatchNotice.innerHTML = `<strong>⚠️ Version Mismatch Detected</strong><br>` +
+                    `VM Name version: <b>${vmVer}</b><br>` +
+                    `Backup file version: <b>${backupVer}</b><br><br>` +
+                    `Please select the Proxmox template you want to deploy:`;
+
+                templateSelect.innerHTML = "";
+                let matchedIndex = -1;
+
+                availableTemplates.forEach((t, index) => {
+                    let opt = document.createElement("option");
+                    opt.value = t.vmid;
+                    opt.text = `${t.name} (VMID: ${t.vmid})`;
+
+                    // Pre-select template matching the backup file's version
+                    if (t.name.toLowerCase().includes(backupVer)) {
+                        matchedIndex = index;
+                    }
+                    templateSelect.appendChild(opt);
+                });
+
+                if (matchedIndex !== -1) {
+                    templateSelect.selectedIndex = matchedIndex;
+                }
+
+                mismatchArea.classList.remove("hidden");
+            } else {
+                mismatchArea.classList.add("hidden");
+                templateSelect.innerHTML = "";
+            }
+        }
+
+        window.onload = function() {
+            loadTemplates();
+            loadPools();
+
+            document.getElementById("ftp_user").addEventListener("input", autoFillTicketId);
+            document.getElementById("backup_file").addEventListener("change", checkVersionMismatch);
+            document.getElementById("vm_name").addEventListener("input", checkVersionMismatch);
+
+            document.getElementById("deployForm").onsubmit = function() {
+                const deployBtn = document.getElementById("deployBtn");
+                deployBtn.disabled = true;
+                deployBtn.innerText = "Deploying... Please wait (This may take several minutes)";
+            };
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>Provision Appliance</h2>
+        <form id="deployForm" method="POST" action="/">
+            <label>VM Name:</label>
+            <input type="text" id="vm_name" name="vm_name" required placeholder="piq_9.3.3_DW_media_5.66">
+
+            <label>Requester Email:</label>
+            <input type="email" name="requester_email" required placeholder="user@company.com">
+
+            <label>Resource Pool:</label>
+            <select id="pool_id" name="pool_id">
+                <option value="">(No Pool / Unassigned)</option>
+            </select>
+
+            <label>Storage Location:</label>
+            <select id="storage_type" name="storage_type" onchange="toggleStorage()">
+                <option value="ftp">FTP Server (10.34.0.41)</option>
+                <option value="cold">Cold Storage (\\10.34.0.42)</option>
+            </select>
+
+            <div id="ftp_creds">
+                <input type="text" id="ftp_user" name="ftp_user" placeholder="FTP Username (e.g. 86789_customer)">
+                <input type="password" id="ftp_pass" name="ftp_pass" placeholder="FTP Password">
+            </div>
+
+            <label>Freshdesk Ticket ID:</label>
+            <input type="text" id="ticket_id" name="ticket_id" placeholder="Auto-filled from FTP username or enter manually">
+
+            <div class="checkbox-row">
+                <input type="checkbox" id="skip_freshdesk" name="skip_freshdesk" value="1" onchange="toggleFreshdesk()">
+                <label for="skip_freshdesk">Skip Freshdesk ticket update (VMware migration)</label>
+            </div>
+
+            <button type="button" onclick="fetchFiles()" style="background: #28a745;">Find Backups</button>
+            <span id="file_status" style="color: blue; font-size: 12px;"></span>
+
+            <div id="file_selection_area" class="hidden">
+                <label>Select Backup File:</label>
+                <select id="backup_file" name="backup_file" required></select>
+
+                <div id="template_mismatch_area" class="hidden">
+                    <div class="mismatch-box" id="mismatch_notice"></div>
+                    <label>Proxmox Template to Deploy:</label>
+                    <select id="template_vmid" name="template_vmid"></select>
+                </div>
+
+                <button type="submit" id="deployBtn">Deploy VM</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
